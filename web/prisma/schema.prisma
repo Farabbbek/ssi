@@ -1,0 +1,152 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  DEVELOPER
+}
+
+enum ProjectRole {
+  ADMIN
+  DEVELOPER
+}
+
+enum PRStatus {
+  OPEN
+  CLOSED
+  MERGED
+}
+
+enum ScanStatus {
+  QUEUED
+  SCANNING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  email         String    @unique
+  password_hash String
+  role          UserRole  @default(DEVELOPER)
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relations
+  created_projects Project[]           @relation("ProjectCreator")
+  project_members  ProjectMember[]
+  authored_prs     PullRequest[]       @relation("PRAuthor")
+  audit_logs       AuditLog[]
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  repo_path   String   @unique
+  is_private  Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Foreign keys
+  created_by_id String
+
+  // Relations
+  created_by     User            @relation("ProjectCreator", fields: [created_by_id], references: [id])
+  members        ProjectMember[]
+  branches       Branch[]
+  pull_requests  PullRequest[]
+  trivy_scans    TrivyScan[]
+  audit_logs     AuditLog[]
+}
+
+model ProjectMember {
+  id         String      @id @default(cuid())
+  project_id String
+  user_id    String
+  role       ProjectRole @default(DEVELOPER)
+  added_at   DateTime    @default(now())
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([project_id, user_id])
+}
+
+model Branch {
+  id         String   @id @default(cuid())
+  project_id String
+  name       String
+  is_default Boolean  @default(false)
+  protected  Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@unique([project_id, name])
+}
+
+model PullRequest {
+  id              String   @id @default(cuid())
+  project_id      String
+  title           String
+  description     String?
+  source_branch   String
+  target_branch   String
+  status          PRStatus @default(OPEN)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  merged_at       DateTime?
+
+  // Foreign keys
+  author_id String
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  author  User    @relation("PRAuthor", fields: [author_id], references: [id])
+}
+
+model TrivyScan {
+  id             String      @id @default(cuid())
+  project_id     String
+  commit_hash    String
+  scan_results   Json
+  severity_counts Json
+  status         ScanStatus  @default(QUEUED)
+  scanned_at     DateTime    @default(now())
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+
+  @@index([project_id, commit_hash])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  details    Json
+  created_at DateTime @default(now())
+
+  // Foreign keys (optional)
+  user_id    String?
+  project_id String?
+
+  // Relations
+  user    User?    @relation(fields: [user_id], references: [id])
+  project Project? @relation(fields: [project_id], references: [id])
+}
