@@ -49,6 +49,8 @@ model User {
   created_projects Project[]           @relation("ProjectCreator")
   project_members  ProjectMember[]
   authored_prs     PullRequest[]       @relation("PRAuthor")
+  merged_prs       PullRequest[]       @relation("PRMerger")
+  commits_authored Commit[]            @relation("CommitAuthor")
   audit_logs       AuditLog[]
 }
 
@@ -69,6 +71,7 @@ model Project {
   members        ProjectMember[]
   branches       Branch[]
   pull_requests  PullRequest[]
+  commits        Commit[]
   trivy_scans    TrivyScan[]
   audit_logs     AuditLog[]
 }
@@ -94,9 +97,12 @@ model Branch {
   is_default Boolean  @default(false)
   protected  Boolean  @default(false)
   created_at DateTime @default(now())
+  last_commit_id String?
 
   // Relations
-  project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  project      Project  @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  commits      Commit[] @relation("BranchCommits")
+  last_commit  Commit?  @relation("BranchLastCommit", fields: [last_commit_id], references: [id])
 
   @@unique([project_id, name])
 }
@@ -112,13 +118,33 @@ model PullRequest {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
   merged_at       DateTime?
+  merged_by_id    String?
 
   // Foreign keys
   author_id String
 
   // Relations
+  project   Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  author    User    @relation("PRAuthor", fields: [author_id], references: [id])
+  merged_by User?   @relation("PRMerger", fields: [merged_by_id], references: [id])
+}
+
+model Commit {
+  id         String   @id @default(cuid())
+  project_id String
+  branch_id  String
+  author_id  String
+  hash       String   @unique
+  message    String?
+  created_at DateTime @default(now())
+
+  // Relations
   project Project @relation(fields: [project_id], references: [id], onDelete: Cascade)
-  author  User    @relation("PRAuthor", fields: [author_id], references: [id])
+  branch  Branch  @relation("BranchCommits", fields: [branch_id], references: [id], onDelete: Cascade)
+  author  User    @relation("CommitAuthor", fields: [author_id], references: [id], onDelete: Cascade)
+  used_as_last_commit Branch[] @relation("BranchLastCommit")
+
+  @@index([project_id, branch_id])
 }
 
 model TrivyScan {
